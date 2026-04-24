@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tomodachi Life: Living The Dream</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; background-color: #000; color: white; 
+            font-family: sans-serif; overflow: hidden; display: flex; 
+            flex-direction: column; align-items: center; justify-content: center;
+            width: 100vw; height: 100vh; 
+        }
+        #status { 
+            position: absolute; top: 10px; z-index: 10; font-weight: bold; 
+            color: #ffeb3b; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px;
+        }
+        video { width: 100%; height: 100%; object-fit: contain; }
+    </style>
+</head>
+<body>
+    <div id="status">Waiting for Authentication...</div>
+    <video id="gameStream" autoplay playsinline muted></video>
+
+    <script>
+        // --- AUTHENTICATION ---
+        // This variable stays in memory until the tab is closed/refreshed.
+        const PASSWORD = prompt("Enter the Stream Password:");
+        
+        // If the user hits cancel or leaves it blank, stop the connection attempt
+        if (!PASSWORD) {
+            document.getElementById('status').innerText = "Password required to connect. Please refresh.";
+            document.getElementById('status').style.color = "#ff4444";
+            throw new Error("No password provided."); 
+        }
+        
+        const RENDER_URL = 'wss://webrtc-signaling-server-et0f.onrender.com/';
+        // ----------------------
+
+        const statusEl = document.getElementById('status');
+        const videoEl = document.getElementById('gameStream');
+        const ws = new WebSocket(RENDER_URL);
+        
+        ws.onerror = () => {
+            statusEl.innerText = "Error: Signaling Server connection failed.";
+            statusEl.style.color = "#ff4444";
+        };
+
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+
+        const dataChannel = pc.createDataChannel('gamepad-inputs');
+        
+        dataChannel.onopen = () => {
+            statusEl.style.display = 'none';
+            console.log("Secure Data Channel Open");
+        };
+
+        pc.ontrack = (event) => {
+            let stream = videoEl.srcObject;
+            if (!stream) {
+                stream = new MediaStream();
+                videoEl.srcObject = stream;
+            }
+            stream.addTrack(event.track);
+            videoEl.onloadedmetadata = () => {
+                videoEl.play().catch(e => console.error("Autoplay blocked:", e));
+            };
+        };
+
+        const unmuteStream = () => {
+            if (videoEl.muted) { videoEl.muted = false; }
+        };
+        document.body.addEventListener('click', unmuteStream, { once: true });
+        document.body.addEventListener('keydown', unmuteStream, { once: true });
+
+        // --- INPUT: Uses the variable prompted at startup ---
+        document.addEventListener('keydown', (e) => {
+            if(["ArrowUp","ArrowDown","Space"].indexOf(e.code) > -1) e.preventDefault();
+            if (dataChannel.readyState === 'open' && !e.repeat) {
+                dataChannel.send(JSON.stringify({ 
+                    password: PASSWORD, 
+                    key: e.key.toLowerCase(), 
+                    state: 'pressed' 
+                }));
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (dataChannel.readyState === 'open') {
+                dataChannel.send(JSON.stringify({ 
+                    password: PASSWORD, 
+                    key: e.key.toLowerCase(), 
+                    state: 'released' 
+                }));
+            }
+        });
+
+        // --- SIGNALING: Uses the variable prompted at startup ---
+        ws.onopen = async () => {
+            statusEl.innerText = "Signaling Connected. Sending Secure Offer...";
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            ws.send(JSON.stringify({ 
+                type: 'offer', 
+                sdp: pc.localDescription, 
+                password: PASSWORD 
+            }));
+        };
+
+        ws.onmessage = async (event) => {
+            const message = JSON.parse(event.data);
+            
+            // Security: Browser ignores messages from signaling if password doesn't match
+            if (message.password !== PASSWORD) {
+                console.warn("Invalid password detected in signaling message.");
+                return;
+            }
+
+            if (message.type === 'answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(message));
+            } else if (message.type === 'candidate') {
+                await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+            }
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({ 
+                    type: 'candidate', 
+                    candidate: event.candidate, 
+                    password: PASSWORD 
+                }));
+            }
+        };
+
+        videoEl.addEventListener('dblclick', () => {
+            if (!document.fullscreenElement) {
+                videoEl.requestFullscreen().catch(err => console.error(err));
+            } else {
+                document.exitFullscreen();
+            }
+        });
+    </script>
+</body>
+</html>
