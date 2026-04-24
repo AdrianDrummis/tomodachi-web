@@ -23,7 +23,6 @@
 
     <script>
         // --- AUTHENTICATION ---
-        // This variable stays in memory until the tab is closed/refreshed.
         const PASSWORD = prompt("Enter the Stream Password:");
         
         // If the user hits cancel or leaves it blank, stop the connection attempt
@@ -76,7 +75,6 @@
         document.body.addEventListener('click', unmuteStream, { once: true });
         document.body.addEventListener('keydown', unmuteStream, { once: true });
 
-        // --- INPUT: Uses the variable prompted at startup ---
         document.addEventListener('keydown', (e) => {
             if(["ArrowUp","ArrowDown","Space"].indexOf(e.code) > -1) e.preventDefault();
             if (dataChannel.readyState === 'open' && !e.repeat) {
@@ -98,7 +96,6 @@
             }
         });
 
-        // --- SIGNALING: Uses the variable prompted at startup ---
         ws.onopen = async () => {
             statusEl.innerText = "Signaling Connected. Sending Secure Offer...";
             const offer = await pc.createOffer();
@@ -114,7 +111,6 @@
         ws.onmessage = async (event) => {
             const message = JSON.parse(event.data);
             
-            // Security: Browser ignores messages from signaling if password doesn't match
             if (message.password !== PASSWORD) {
                 console.warn("Invalid password detected in signaling message.");
                 return;
