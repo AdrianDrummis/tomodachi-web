@@ -44,6 +44,15 @@
             statusEl.style.color = "#ff4444";
         };
 
+        ws.onclose = () => {
+            console.warn("Signaling server disconnected.");
+            if (pc.connectionState !== 'connected') {
+                statusEl.style.display = 'block';
+                statusEl.innerText = "Signaling Server offline. Cannot establish connection.";
+                statusEl.style.color = "#ff4444";
+            }
+        };
+
         const pc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         });
@@ -55,6 +64,17 @@
         dataChannel.onopen = () => {
             statusEl.style.display = 'none';
             console.log("Secure Data Channel Open");
+        };
+
+        // --- PEER-TO-PEER DISCONNECT HANDLING ---
+        pc.onconnectionstatechange = () => {
+            console.log(`Connection state: ${pc.connectionState}`);
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                statusEl.style.display = 'block';
+                statusEl.innerText = "Connection to host lost. Please refresh the page.";
+                statusEl.style.color = "#ff4444";
+                videoEl.style.opacity = "0.3"; 
+            }
         };
 
         pc.ontrack = (event) => {
